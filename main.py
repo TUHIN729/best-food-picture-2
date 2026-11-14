@@ -1,37 +1,47 @@
-#!/usr/bin/env python3
-# food-picture-01 entry: a photorealistic gourmet smash burger, made to make
-# the AI judge hungry. The program copies the picture shipped beside it
-# (food.jpg, a 1024x1024 JPEG) to $MAKEFUN_OUTPUT_DIR/entry.png, byte for byte.
-#
-# The picture: a steaming double smash burger on a dark slate, molten cheddar
-# dripping over a charred patty, glossy buttered brioche bun, crisp lettuce
-# and ripe tomato, warm bokeh behind. One hero dish, centred, bold shapes
-# and warm saturated colour, so it still reads delicious at 300 pixels.
-# Standard library only, no network, no model calls, deterministic.
+"""Copy food.jpg byte-for-byte to entry.png in the output directory.
+
+The picture is finished already; this script does no image processing.
+It only copies the bytes and verifies the copy, so entry.png is exactly
+the JPEG stored in food.jpg.
+"""
 
 import os
-from pathlib import Path
+import sys
 
-HERE = Path(__file__).resolve().parent
-ASSET = HERE / "food.jpg"
-OUT_DIR = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
+MAX_BYTES = 1024 * 1024  # 1 MiB
 
-# Sanity-check the shipped picture before copying it: it must be a real
-# JPEG (FF D8 magic bytes) and inside the gate's 1 MiB cap, so a corrupt
-# or oversized asset fails loudly here instead of shipping a bad entry.
-data = ASSET.read_bytes()
-if data[:2] != b"\xff\xd8":
-    raise SystemExit("food.jpg is not a JPEG")
-if len(data) > 1_048_576:
-    raise SystemExit("food.jpg exceeds the 1 MiB gate limit")
 
-OUT_DIR.mkdir(parents=True, exist_ok=True)
-out_path = OUT_DIR / "entry.png"
-out_path.write_bytes(data)
+def main():
+    here = os.path.dirname(os.path.abspath(__file__))
+    src = os.path.join(here, "food.jpg")
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR") or "/output"
+    dst = os.path.join(out_dir, "entry.png")
 
-# Size-match guard: read the output back and confirm it is byte-for-byte
-# identical to the shipped asset, so a truncated or partial write can never
-# pass silently as a valid entry.
-written = out_path.read_bytes()
-if len(written) != len(data) or written != data:
-    raise SystemExit("entry.png does not match food.jpg byte-for-byte")
+    with open(src, "rb") as f:
+        data = f.read()
+    print("input: %s (%d bytes)" % (src, len(data)))
+    if len(data) > MAX_BYTES:
+        print("error: input is %d bytes, over the 1 MiB limit" % len(data), file=sys.stderr)
+        return 1
+
+    os.makedirs(out_dir, exist_ok=True)
+    with open(dst, "wb") as f:
+        f.write(data)
+    print("output: %s" % dst)
+
+    with open(dst, "rb") as f:
+        copied = f.read()
+    if copied != data:
+        print("error: output differs from input", file=sys.stderr)
+        return 1
+    # The size limit applies to the file as submitted too, so re-check
+    # the bytes actually on disk, not just the bytes we meant to write.
+    if len(copied) > MAX_BYTES:
+        print("error: output is %d bytes, over the 1 MiB limit" % len(copied), file=sys.stderr)
+        return 1
+    print("verified: output matches input byte-for-byte (%d bytes)" % len(copied))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
